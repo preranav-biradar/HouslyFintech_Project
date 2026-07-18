@@ -1,0 +1,8 @@
+{
+  "dependencies": {
+    "framer-motion": "^12.42.2",
+    "react-circular-progressbar": "^2.2.0",
+    "react-countup": "^6.5.3",
+    "recharts": "^3.9.2"
+  }
+}
