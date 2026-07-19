@@ -113,7 +113,7 @@ const Attendance = () => {
                     <Clock size={18} /> Check In Now
                   </button>
                 ) : !todayStatus.check_out_time ? (
-                  <button className="btn-secondary" onClick={() => { setIsCheckingOut(true); setShowWebcam(true); }}>
+                  <button className="btn-primary" onClick={() => { setIsCheckingOut(true); setShowWebcam(true); }}>
                     <Clock size={18} /> Check Out
                   </button>
                 ) : (

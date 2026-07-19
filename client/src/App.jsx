@@ -9,8 +9,10 @@ import LeaveManagement from './pages/LeaveManagement';
 import ExpenseManagement from './pages/ExpenseManagement';
 import Dashboard from './pages/Dashboard';
 import Signup from './pages/Signup';
+import ForgotPassword from './pages/ForgotPassword';
+import ResetPassword from './pages/ResetPassword';
 import AdminPanel from './pages/AdminPanel';
-const Profile = () => <div className="page-container"><h2>Profile</h2></div>;
+import Profile from './pages/Profile';
 
 // Route Guard Component
 const ProtectedRoute = ({ children, allowedRoles }) => {
@@ -36,24 +38,26 @@ function App() {
     <AuthProvider>
       <BrowserRouter>
         <Routes>
-            {/* Public landing: login at root */}
-            <Route path="/" element={<Login />} />
-            <Route path="/login" element={<Login />} />
-            <Route path="/signup" element={<Signup />} />
+          {/* Public landing: login at root */}
+          <Route path="/" element={<Login />} />
+          <Route path="/login" element={<Login />} />
+          <Route path="/signup" element={<Signup />} />
+          <Route path="/forgot-password" element={<ForgotPassword />} />
+          <Route path="/reset-password/:token" element={<ResetPassword />} />
 
-            {/* Protected app routes mounted under /app */}
-            <Route path="/app/*" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
-              <Route index element={<Dashboard />} />
-              <Route path="attendance" element={<Attendance />} />
-              <Route path="leaves" element={<LeaveManagement />} />
-              <Route path="expenses" element={<ExpenseManagement />} />
-              <Route path="profile" element={<Profile />} />
+          {/* Protected app routes mounted under /app */}
+          <Route path="/app/*" element={<ProtectedRoute><DashboardLayout /></ProtectedRoute>}>
+            <Route index element={<Dashboard />} />
+            <Route path="attendance" element={<Attendance />} />
+            <Route path="leaves" element={<LeaveManagement />} />
+            <Route path="expenses" element={<ExpenseManagement />} />
+            <Route path="profile" element={<Profile />} />
 
-              <Route path="admin" element={
-                <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
-                  <AdminPanel />
-                </ProtectedRoute>
-              } />
+            <Route path="admin" element={
+              <ProtectedRoute allowedRoles={['super_admin', 'admin']}>
+                <AdminPanel />
+              </ProtectedRoute>
+            } />
           </Route>
         </Routes>
       </BrowserRouter>

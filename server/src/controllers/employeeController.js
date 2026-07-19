@@ -97,16 +97,25 @@ const getEmployee = async (req, res, next) => {
  */
 const updateProfile = async (req, res, next) => {
   try {
-    const { phone, avatar_url } = req.body;
+    const { first_name, last_name, phone, department_id } = req.body;
+    let avatar_url = req.body.avatar_url; // fallback if they just pass string
+
+    if (req.file) {
+      avatar_url = req.protocol + '://' + req.get('host') + '/uploads/' + req.file.filename;
+    }
+
+    // Super admins are permanently assigned to HR — don't allow department change
+    const allowDeptChange = req.user.role_name !== 'super_admin';
 
     await pool.query(
-      'UPDATE users SET phone = COALESCE(?, phone), avatar_url = COALESCE(?, avatar_url) WHERE id = ?',
-      [phone, avatar_url, req.user.id]
+      'UPDATE users SET first_name = COALESCE(?, first_name), last_name = COALESCE(?, last_name), phone = COALESCE(?, phone), avatar_url = COALESCE(?, avatar_url), department_id = CASE WHEN ? AND ? IS NOT NULL THEN ? ELSE department_id END WHERE id = ?',
+      [first_name, last_name, phone, avatar_url, allowDeptChange, department_id ? parseInt(department_id) : null, department_id ? parseInt(department_id) : null, req.user.id]
     );
 
     res.json({
       success: true,
       message: 'Profile updated successfully',
+      avatar_url
     });
   } catch (error) {
     next(error);

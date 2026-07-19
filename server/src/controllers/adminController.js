@@ -1,101 +1,180 @@
-const bcrypt = require('bcryptjs');
 const { pool } = require('../config/db');
+const bcrypt = require('bcryptjs');
 
-/**
- * POST /api/admin/employees
- * Create a new employee
- */
-const createEmployee = async (req, res, next) => {
+// ========== Dashboard Stats ==========
+
+const getDashboardStats = async (req, res, next) => {
   try {
-    const {
-      first_name, last_name, email, phone,
-      role_id, department_id, manager_id,
-      designation, date_of_joining,
-    } = req.body;
+    const { role } = req.query;
 
-    // Generate employee ID
-    const [lastEmployee] = await pool.query(
-      'SELECT employee_id FROM users ORDER BY id DESC LIMIT 1'
-    );
+    let userFilter = '';
+    const params = [];
 
-    let newEmpId = 'EMP-001';
-    if (lastEmployee.length > 0) {
-      const lastNum = parseInt(lastEmployee[0].employee_id.split('-')[1]);
-      newEmpId = `EMP-${String(lastNum + 1).padStart(3, '0')}`;
+    if (role) {
+      userFilter = ' AND r.name = ?';
+      params.push(role);
     }
 
-    // Hash default password
-    const salt = await bcrypt.genSalt(10);
-    const defaultPassword = 'Employee@123';
-    const passwordHash = await bcrypt.hash(defaultPassword, salt);
-
-    const [result] = await pool.query(
-      `INSERT INTO users (employee_id, first_name, last_name, email, password_hash, 
-                          phone, role_id, department_id, manager_id, designation, date_of_joining)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
-      [newEmpId, first_name, last_name, email, passwordHash,
-       phone || null, role_id, department_id, manager_id || null,
-       designation || null, date_of_joining || new Date().toISOString().split('T')[0]]
+    // Total employees
+    const [[{ totalEmployees }]] = await pool.query(
+      `SELECT COUNT(*) as totalEmployees FROM users u JOIN roles r ON u.role_id = r.id WHERE u.is_active = TRUE ${userFilter}`,
+      params
     );
 
-    // Initialize leave balances for the new employee
-    const currentYear = new Date().getFullYear();
-    const [leaveTypes] = await pool.query('SELECT id, days_per_year FROM leave_types WHERE is_active = TRUE');
+    // Today's attendance
+    const today = new Date().toISOString().slice(0, 10);
+    const [[{ todayAttendance }]] = await pool.query(
+      `SELECT COUNT(DISTINCT a.user_id) as todayAttendance
+       FROM attendance_records a
+       JOIN users u ON a.user_id = u.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE DATE(a.date) = ? AND u.is_active = TRUE ${userFilter}`,
+      [today, ...params]
+    );
 
-    for (const lt of leaveTypes) {
-      await pool.query(
-        `INSERT IGNORE INTO leave_balances (user_id, leave_type_id, year, total_days, remaining_days)
-         VALUES (?, ?, ?, ?, ?)`,
-        [result.insertId, lt.id, currentYear, lt.days_per_year, lt.days_per_year]
-      );
-    }
+    // Pending leaves
+    const [[{ pendingLeaves }]] = await pool.query(
+      `SELECT COUNT(*) as pendingLeaves FROM leave_requests lr
+       JOIN users u ON lr.user_id = u.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE lr.status = 'pending' AND u.is_active = TRUE ${userFilter}`,
+      params
+    );
 
-    res.status(201).json({
+    // Pending expenses
+    const [[{ pendingExpensesCount, pendingExpensesAmount }]] = await pool.query(
+      `SELECT COUNT(*) as pendingExpensesCount, COALESCE(SUM(er.amount), 0) as pendingExpensesAmount
+       FROM expense_claims er
+       JOIN users u ON er.user_id = u.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE er.status = 'pending' AND u.is_active = TRUE ${userFilter}`,
+      params
+    );
+
+    // Department stats
+    const [departmentStats] = await pool.query(
+      `SELECT d.name,
+              COUNT(DISTINCT u.id) as employee_count,
+              COUNT(DISTINCT CASE WHEN DATE(a.date) = ? THEN a.user_id END) as present_today
+       FROM departments d
+       LEFT JOIN users u ON d.id = u.department_id AND u.is_active = TRUE
+       LEFT JOIN attendance_records a ON a.user_id = u.id AND DATE(a.date) = ?
+       GROUP BY d.id, d.name
+       ORDER BY d.name`,
+      [today, today]
+    );
+
+    // Recent attendance records (last 2 days)
+    const yesterday = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+    const [attendanceRecords] = await pool.query(
+      `SELECT a.id, a.date, a.check_in_time, a.check_out_time, a.status,
+              CONCAT(u.first_name, ' ', u.last_name) as user_name, d.name as department_name
+       FROM attendance_records a
+       JOIN users u ON a.user_id = u.id
+       JOIN departments d ON u.department_id = d.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE (DATE(a.date) = ? OR DATE(a.date) = ?) AND u.is_active = TRUE ${userFilter}
+       ORDER BY a.check_in_time DESC
+       LIMIT 20`,
+      [today, yesterday, ...params]
+    );
+
+    // Pending leave requests detail
+    const [pendingLeaveRequests] = await pool.query(
+      `SELECT lr.id, lr.start_date, lr.end_date, lr.reason, lr.status,
+              lt.name as leave_type_name,
+              CONCAT(u.first_name, ' ', u.last_name) as user_name
+       FROM leave_requests lr
+       JOIN users u ON lr.user_id = u.id
+       JOIN leave_types lt ON lr.leave_type_id = lt.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE lr.status = 'pending' AND u.is_active = TRUE ${userFilter}
+       ORDER BY lr.created_at DESC LIMIT 5`,
+      params
+    );
+
+    // Pending expense requests detail
+    const [pendingExpenseRequests] = await pool.query(
+      `SELECT er.id, er.title, er.amount, er.expense_date, er.status,
+              CONCAT(u.first_name, ' ', u.last_name) as user_name
+       FROM expense_claims er
+       JOIN users u ON er.user_id = u.id
+       JOIN roles r ON u.role_id = r.id
+       WHERE er.status = 'pending' AND u.is_active = TRUE ${userFilter}
+       ORDER BY er.created_at DESC LIMIT 5`,
+      params
+    );
+
+    res.json({
       success: true,
-      message: `Employee created successfully. Default password: ${defaultPassword}`,
       data: {
-        id: result.insertId,
-        employee_id: newEmpId,
-      },
+        totalEmployees,
+        todayAttendance,
+        pendingLeaves,
+        pendingExpensesCount,
+        pendingExpensesAmount,
+        departmentStats,
+        attendanceRecords,
+        pendingLeaveRequests,
+        pendingExpenseRequests,
+      }
     });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * PUT /api/admin/employees/:id
- * Update an employee's details
- */
+// ========== Employee CRUD ==========
+
+const createEmployee = async (req, res, next) => {
+  try {
+    const {
+      employee_id, first_name, last_name, email, password,
+      phone, role_id, department_id, designation, date_of_joining, manager_id
+    } = req.body;
+
+    const password_hash = await bcrypt.hash(password || 'Welcome@123', 10);
+
+    const [result] = await pool.query(
+      `INSERT INTO users (employee_id, first_name, last_name, email, password_hash, phone, role_id, department_id, designation, date_of_joining, manager_id)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      [employee_id, first_name, last_name, email, password_hash, phone || null,
+       role_id, department_id, designation || null, date_of_joining || new Date(), manager_id || null]
+    );
+
+    // Initialize leave balances
+    const [leaveTypes] = await pool.query('SELECT id, days_per_year FROM leave_types WHERE is_active = TRUE');
+    const year = new Date().getFullYear();
+    for (const lt of leaveTypes) {
+      await pool.query(
+        'INSERT IGNORE INTO leave_balances (user_id, leave_type_id, year, total_days, remaining_days) VALUES (?, ?, ?, ?, ?)',
+        [result.insertId, lt.id, year, lt.days_per_year, lt.days_per_year]
+      );
+    }
+
+    res.status(201).json({ success: true, message: 'Employee created successfully', data: { id: result.insertId } });
+  } catch (error) {
+    next(error);
+  }
+};
+
 const updateEmployee = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const {
-      first_name, last_name, email, phone,
-      role_id, department_id, manager_id,
-      designation, is_active,
-    } = req.body;
-
-    const [existing] = await pool.query('SELECT id FROM users WHERE id = ?', [id]);
-    if (existing.length === 0) {
-      return res.status(404).json({ success: false, message: 'Employee not found' });
-    }
+    const { first_name, last_name, phone, role_id, department_id, designation, manager_id, is_active } = req.body;
 
     await pool.query(
-      `UPDATE users SET 
-        first_name = COALESCE(?, first_name),
-        last_name = COALESCE(?, last_name),
-        email = COALESCE(?, email),
-        phone = COALESCE(?, phone),
-        role_id = COALESCE(?, role_id),
+      `UPDATE users SET
+        first_name    = COALESCE(?, first_name),
+        last_name     = COALESCE(?, last_name),
+        phone         = COALESCE(?, phone),
+        role_id       = COALESCE(?, role_id),
         department_id = COALESCE(?, department_id),
-        manager_id = ?,
-        designation = COALESCE(?, designation),
-        is_active = COALESCE(?, is_active)
+        designation   = COALESCE(?, designation),
+        manager_id    = COALESCE(?, manager_id),
+        is_active     = COALESCE(?, is_active)
        WHERE id = ?`,
-      [first_name, last_name, email, phone, role_id, department_id,
-       manager_id !== undefined ? manager_id : null,
-       designation, is_active, id]
+      [first_name, last_name, phone, role_id, department_id, designation, manager_id, is_active, id]
     );
 
     res.json({ success: true, message: 'Employee updated successfully' });
@@ -104,275 +183,23 @@ const updateEmployee = async (req, res, next) => {
   }
 };
 
-/**
- * DELETE /api/admin/employees/:id
- * Soft delete (deactivate) an employee
- */
 const deleteEmployee = async (req, res, next) => {
   try {
     const { id } = req.params;
-
-    // Prevent deleting own account
-    if (parseInt(id) === req.user.id) {
-      return res.status(400).json({ success: false, message: 'You cannot deactivate your own account' });
-    }
-
     await pool.query('UPDATE users SET is_active = FALSE WHERE id = ?', [id]);
-
     res.json({ success: true, message: 'Employee deactivated successfully' });
   } catch (error) {
     next(error);
   }
 };
 
-/**
- * POST /api/admin/employees/:id/reset-password
- * Reset employee password to default
- */
 const resetPassword = async (req, res, next) => {
   try {
     const { id } = req.params;
-    const defaultPassword = 'Employee@123';
-    const salt = await bcrypt.genSalt(10);
-    const passwordHash = await bcrypt.hash(defaultPassword, salt);
-
-    await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [passwordHash, id]);
-
-    res.json({
-      success: true,
-      message: `Password reset to: ${defaultPassword}`,
-    });
-  } catch (error) {
-    next(error);
-  }
-};
-
-/**
- * GET /api/admin/dashboard
- * Get admin dashboard summary stats
- * Query param: role (optional) - filter by role name
- */
-const getDashboardStats = async (req, res, next) => {
-  try {
-    const today = new Date().toISOString().split('T')[0];
-    const { role } = req.query;
-
-    // Base role filter
-    const roleFilter = role ? ' AND r.name = ?' : '';
-    const roleParams = role ? [role] : [];
-
-    // Total active employees (with optional role filter)
-    const [empCount] = await pool.query(
-      `SELECT COUNT(*) as total FROM users u 
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.is_active = TRUE${roleFilter}`,
-      roleParams
-    );
-
-    // Today's attendance (with optional role filter)
-    const [attendanceCount] = await pool.query(
-      `SELECT COUNT(*) as total FROM attendance_records ar
-       JOIN users u ON ar.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE ar.date = ? AND u.is_active = TRUE${roleFilter}`,
-      [today, ...roleParams]
-    );
-
-    // Pending leave requests (with optional role filter)
-    const [pendingLeaves] = await pool.query(
-      `SELECT COUNT(*) as total FROM leave_requests lr
-       JOIN users u ON lr.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE lr.status = 'pending' AND u.is_active = TRUE${roleFilter}`,
-      roleParams
-    );
-
-    // Pending expense claims (with optional role filter)
-    const [pendingExpenses] = await pool.query(
-      `SELECT COUNT(*) as total, COALESCE(SUM(amount), 0) as total_amount 
-       FROM expense_claims ec
-       JOIN users u ON ec.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE ec.status = 'pending' AND u.is_active = TRUE${roleFilter}`,
-      roleParams
-    );
-
-    // Department-wise employee count and today attendance (with optional role filter)
-    const [deptStats] = await pool.query(
-      `SELECT d.name,
-              COUNT(u.id) as employee_count,
-              SUM(CASE WHEN ar.date = ? THEN 1 ELSE 0 END) as present_today
-       FROM departments d
-       LEFT JOIN users u ON d.id = u.department_id AND u.is_active = TRUE
-       LEFT JOIN roles r ON u.role_id = r.id
-       LEFT JOIN attendance_records ar ON ar.user_id = u.id AND ar.date = ?
-       WHERE d.is_active = TRUE${roleFilter}
-       GROUP BY d.id, d.name`,
-      [today, today, ...roleParams]
-    );
-
-    // Recent activity (last 10 notifications)
-    const [recentActivity] = await pool.query(
-      `SELECT n.*, CONCAT(u.first_name, ' ', u.last_name) as user_name
-       FROM notifications n
-       JOIN users u ON n.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.is_active = TRUE${roleFilter}
-       ORDER BY n.created_at DESC LIMIT 10`,
-      roleParams
-    );
-
-    const yesterday = new Date(Date.now() - 86400000).toISOString().split('T')[0];
-
-    // Recent attendance entries for the admin view (today and yesterday only)
-    const [recentAttendance] = await pool.query(
-      `SELECT ar.id, ar.date, ar.check_in_time, ar.check_out_time, CONCAT(u.first_name, ' ', u.last_name) as user_name
-       FROM attendance_records ar
-       JOIN users u ON ar.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE u.is_active = TRUE AND ar.date IN (?, ?)${roleFilter}
-       ORDER BY ar.date DESC, ar.check_in_time DESC
-       LIMIT 50`,
-      [today, yesterday, ...roleParams]
-    );
-
-    // Pending leave requests for admin view
-    const [pendingLeaveItems] = await pool.query(
-      `SELECT lr.id, lr.status, lr.total_days, lr.reason, lr.start_date, lr.end_date,
-              lt.name as leave_type_name, CONCAT(u.first_name, ' ', u.last_name) as user_name
-       FROM leave_requests lr
-       JOIN leave_types lt ON lr.leave_type_id = lt.id
-       JOIN users u ON lr.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE lr.status = 'pending' AND u.is_active = TRUE${roleFilter}
-       ORDER BY lr.created_at DESC
-       LIMIT 20`,
-      roleParams
-    );
-
-    // Approved leave requests for admin view
-    const [approvedLeaveItems] = await pool.query(
-      `SELECT lr.id, lr.status, lr.total_days, lr.reason, lr.start_date, lr.end_date,
-              lt.name as leave_type_name, CONCAT(u.first_name, ' ', u.last_name) as user_name,
-              CONCAT(approver.first_name, ' ', approver.last_name) as approved_by_name
-       FROM leave_requests lr
-       JOIN leave_types lt ON lr.leave_type_id = lt.id
-       JOIN users u ON lr.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       LEFT JOIN users approver ON lr.approved_by = approver.id
-       WHERE lr.status = 'approved' AND u.is_active = TRUE${roleFilter}
-       ORDER BY lr.updated_at DESC
-       LIMIT 20`,
-      roleParams
-    );
-
-    // Rejected leave requests for admin view
-    const [rejectedLeaveItems] = await pool.query(
-      `SELECT lr.id, lr.status, lr.total_days, lr.reason, lr.start_date, lr.end_date,
-              lr.rejection_reason, lt.name as leave_type_name, CONCAT(u.first_name, ' ', u.last_name) as user_name,
-              CONCAT(approver.first_name, ' ', approver.last_name) as approved_by_name
-       FROM leave_requests lr
-       JOIN leave_types lt ON lr.leave_type_id = lt.id
-       JOIN users u ON lr.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       LEFT JOIN users approver ON lr.approved_by = approver.id
-       WHERE lr.status = 'rejected' AND u.is_active = TRUE${roleFilter}
-       ORDER BY lr.updated_at DESC
-       LIMIT 20`,
-      roleParams
-    );
-
-    // Pending expense claims for admin view
-    const [pendingExpenseItems] = await pool.query(
-      `SELECT ec.id, ec.amount, ec.status, ec.title, ec.description,
-              ec.expense_date, CONCAT(u.first_name, ' ', u.last_name) as user_name
-       FROM expense_claims ec
-       JOIN users u ON ec.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       WHERE ec.status = 'pending' AND u.is_active = TRUE${roleFilter}
-       ORDER BY ec.created_at DESC
-       LIMIT 20`,
-      roleParams
-    );
-
-    // Approved expense claims for admin view
-    const [approvedExpenseItems] = await pool.query(
-      `SELECT ec.id, ec.amount, ec.status, ec.title, ec.description,
-              ec.expense_date, CONCAT(u.first_name, ' ', u.last_name) as user_name,
-              CONCAT(approver.first_name, ' ', approver.last_name) as approved_by_name
-       FROM expense_claims ec
-       JOIN users u ON ec.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       LEFT JOIN users approver ON ec.approved_by = approver.id
-       WHERE ec.status = 'approved' AND u.is_active = TRUE${roleFilter}
-       ORDER BY ec.updated_at DESC
-       LIMIT 20`
-    , roleParams
-    );
-
-    // Rejected expense claims for admin view
-    const [rejectedExpenseItems] = await pool.query(
-      `SELECT ec.id, ec.amount, ec.status, ec.title, ec.description,
-              ec.expense_date, ec.rejection_reason, CONCAT(u.first_name, ' ', u.last_name) as user_name,
-              CONCAT(approver.first_name, ' ', approver.last_name) as approved_by_name
-       FROM expense_claims ec
-       JOIN users u ON ec.user_id = u.id
-       LEFT JOIN roles r ON u.role_id = r.id
-       LEFT JOIN users approver ON ec.approved_by = approver.id
-       WHERE ec.status = 'rejected' AND u.is_active = TRUE${roleFilter}
-       ORDER BY ec.updated_at DESC
-       LIMIT 20`,
-      roleParams
-    );
-
-    const employeeActivity = recentActivity.map((item) => ({
-      title: item.title,
-      subtitle: `${item.user_name} • ${new Date(item.created_at).toLocaleString()}`,
-    }));
-
-    res.json({
-      success: true,
-      data: {
-        totalEmployees: empCount[0].total,
-        total_employees: empCount[0].total,
-        todayAttendance: attendanceCount[0].total,
-        today_attendance: attendanceCount[0].total,
-        attendancePercentage: empCount[0].total > 0
-          ? ((attendanceCount[0].total / empCount[0].total) * 100).toFixed(1)
-          : 0,
-        attendance_percentage: empCount[0].total > 0
-          ? ((attendanceCount[0].total / empCount[0].total) * 100).toFixed(1)
-          : 0,
-        pendingLeaves: pendingLeaves[0].total,
-        pending_leaves: pendingLeaves[0].total,
-        pendingExpensesCount: pendingExpenses[0].total,
-        pendingExpensesAmount: pendingExpenses[0].total_amount,
-        pending_expenses: {
-          count: pendingExpenses[0].total,
-          amount: pendingExpenses[0].total_amount,
-        },
-        departmentStats: deptStats,
-        department_stats: deptStats,
-        recentActivity,
-        recent_activity: recentActivity,
-        employeeActivity,
-        employee_activity: employeeActivity,
-        attendanceRecords: recentAttendance,
-        recent_attendance: recentAttendance,
-        pendingLeaveRequests: pendingLeaveItems,
-        pending_leave_items: pendingLeaveItems,
-        approvedLeaveRequests: approvedLeaveItems,
-        approved_leave_items: approvedLeaveItems,
-        rejectedLeaveRequests: rejectedLeaveItems,
-        rejected_leave_items: rejectedLeaveItems,
-        pendingExpenseRequests: pendingExpenseItems,
-        pending_expense_items: pendingExpenseItems,
-        approvedExpenseRequests: approvedExpenseItems,
-        approved_expense_items: approvedExpenseItems,
-        rejectedExpenseRequests: rejectedExpenseItems,
-        rejected_expense_items: rejectedExpenseItems,
-      },
-    });
+    const { new_password } = req.body;
+    const password_hash = await bcrypt.hash(new_password || 'Welcome@123', 10);
+    await pool.query('UPDATE users SET password_hash = ? WHERE id = ?', [password_hash, id]);
+    res.json({ success: true, message: 'Password reset successfully' });
   } catch (error) {
     next(error);
   }
@@ -382,10 +209,16 @@ const getDashboardStats = async (req, res, next) => {
 
 const getDepartments = async (req, res, next) => {
   try {
+    const isSuperOrAdmin = ['super_admin', 'admin'].includes(req.user?.role_name);
+
+    // HR is reserved for super_admin — hide it from the public dropdown
+    const excludeClause = isSuperOrAdmin ? '' : `WHERE d.name != 'Human Resources'`;
+
     const [departments] = await pool.query(
       `SELECT d.*, COUNT(u.id) as employee_count
        FROM departments d
        LEFT JOIN users u ON d.id = u.department_id AND u.is_active = TRUE
+       ${excludeClause}
        GROUP BY d.id
        ORDER BY d.name`
     );
@@ -422,11 +255,11 @@ const updateDepartment = async (req, res, next) => {
   }
 };
 
-// ========== Office Location CRUD ==========
+// ========== Office Locations ==========
 
 const getOfficeLocations = async (req, res, next) => {
   try {
-    const [locations] = await pool.query('SELECT * FROM office_locations ORDER BY name');
+    const [locations] = await pool.query('SELECT * FROM office_locations WHERE is_active = TRUE ORDER BY name');
     res.json({ success: true, data: locations });
   } catch (error) {
     next(error);
@@ -451,11 +284,7 @@ const updateOfficeLocation = async (req, res, next) => {
     const { id } = req.params;
     const { name, address, latitude, longitude, radius_meters, is_active } = req.body;
     await pool.query(
-      `UPDATE office_locations 
-       SET name = COALESCE(?, name), address = COALESCE(?, address), 
-           latitude = COALESCE(?, latitude), longitude = COALESCE(?, longitude),
-           radius_meters = COALESCE(?, radius_meters), is_active = COALESCE(?, is_active)
-       WHERE id = ?`,
+      'UPDATE office_locations SET name = COALESCE(?, name), address = COALESCE(?, address), latitude = COALESCE(?, latitude), longitude = COALESCE(?, longitude), radius_meters = COALESCE(?, radius_meters), is_active = COALESCE(?, is_active) WHERE id = ?',
       [name, address, latitude, longitude, radius_meters, is_active, id]
     );
     res.json({ success: true, message: 'Office location updated' });
@@ -464,7 +293,7 @@ const updateOfficeLocation = async (req, res, next) => {
   }
 };
 
-// ========== Roles & Leave Types & Expense Categories ==========
+// ========== Lookups ==========
 
 const getRoles = async (req, res, next) => {
   try {
@@ -477,8 +306,8 @@ const getRoles = async (req, res, next) => {
 
 const getLeaveTypes = async (req, res, next) => {
   try {
-    const [types] = await pool.query('SELECT * FROM leave_types ORDER BY name');
-    res.json({ success: true, data: types });
+    const [leaveTypes] = await pool.query('SELECT * FROM leave_types WHERE is_active = TRUE ORDER BY name');
+    res.json({ success: true, data: leaveTypes });
   } catch (error) {
     next(error);
   }
@@ -486,7 +315,7 @@ const getLeaveTypes = async (req, res, next) => {
 
 const getExpenseCategories = async (req, res, next) => {
   try {
-    const [categories] = await pool.query('SELECT * FROM expense_categories ORDER BY name');
+    const [categories] = await pool.query('SELECT * FROM expense_categories WHERE is_active = TRUE ORDER BY name');
     res.json({ success: true, data: categories });
   } catch (error) {
     next(error);
@@ -498,19 +327,10 @@ const getExpenseCategories = async (req, res, next) => {
 const getNotifications = async (req, res, next) => {
   try {
     const [notifications] = await pool.query(
-      'SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50',
+      `SELECT * FROM notifications WHERE user_id = ? ORDER BY created_at DESC LIMIT 50`,
       [req.user.id]
     );
-
-    const [unreadCount] = await pool.query(
-      'SELECT COUNT(*) as count FROM notifications WHERE user_id = ? AND is_read = FALSE',
-      [req.user.id]
-    );
-
-    res.json({
-      success: true,
-      data: { notifications, unread_count: unreadCount[0].count },
-    });
+    res.json({ success: true, data: notifications });
   } catch (error) {
     next(error);
   }
@@ -519,20 +339,19 @@ const getNotifications = async (req, res, next) => {
 const markNotificationRead = async (req, res, next) => {
   try {
     const { id } = req.params;
-    if (id === 'all') {
-      await pool.query('UPDATE notifications SET is_read = TRUE WHERE user_id = ?', [req.user.id]);
-    } else {
-      await pool.query('UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?', [id, req.user.id]);
-    }
-    res.json({ success: true, message: 'Marked as read' });
+    await pool.query(
+      'UPDATE notifications SET is_read = TRUE WHERE id = ? AND user_id = ?',
+      [id, req.user.id]
+    );
+    res.json({ success: true, message: 'Notification marked as read' });
   } catch (error) {
     next(error);
   }
 };
 
 module.exports = {
-  createEmployee, updateEmployee, deleteEmployee, resetPassword,
   getDashboardStats,
+  createEmployee, updateEmployee, deleteEmployee, resetPassword,
   getDepartments, createDepartment, updateDepartment,
   getOfficeLocations, createOfficeLocation, updateOfficeLocation,
   getRoles, getLeaveTypes, getExpenseCategories,

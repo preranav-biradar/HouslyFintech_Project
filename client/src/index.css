@@ -85,6 +85,11 @@ input, textarea, select {
   transition: all var(--transition-fast);
 }
 
+select option {
+  background-color: var(--bg-primary);
+  color: var(--text-primary);
+}
+
 input:focus, textarea:focus, select:focus {
   outline: none;
   border-color: var(--accent-primary);

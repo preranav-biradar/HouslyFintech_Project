@@ -2,6 +2,8 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const config = require('../config/env');
 const { pool } = require('../config/db');
+const crypto = require('crypto');
+const nodemailer = require('nodemailer');
 
 /**
  * POST /api/auth/login
@@ -265,4 +267,142 @@ const changePassword = async (req, res, next) => {
   }
 };
 
-module.exports = { signup, login, logout, getMe, changePassword };
+const forgotPassword = async (req, res, next) => {
+  try {
+    const { email } = req.body;
+
+    if (!email) {
+      return res.status(400).json({ success: false, message: 'Email is required' });
+    }
+
+    const [users] = await pool.query('SELECT id, first_name FROM users WHERE email = ?', [email]);
+    
+    if (users.length === 0) {
+      // Return success even if not found to prevent email enumeration
+      return res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
+    }
+
+    const user = users[0];
+    const resetToken = crypto.randomBytes(32).toString('hex');
+    const resetTokenHash = await bcrypt.hash(resetToken, 10);
+    
+    await pool.query(
+      'UPDATE users SET reset_token = ?, reset_token_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?',
+      [resetTokenHash, user.id]
+    );
+
+    // Generate Reset Link
+    const resetLink = `${req.protocol}://${req.get('host') === 'localhost:5000' ? 'localhost:5173' : req.get('host')}/reset-password/${resetToken}?email=${encodeURIComponent(email)}`;
+    
+    // Set up Nodemailer Transport
+    let transporter;
+    if (process.env.SMTP_HOST && process.env.SMTP_USER) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: process.env.SMTP_PORT || 587,
+        secure: false,
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS
+        }
+      });
+    } else {
+      // Fallback to Ethereal Mail for testing without SMTP credentials
+      const testAccount = await nodemailer.createTestAccount();
+      transporter = nodemailer.createTransport({
+        host: "smtp.ethereal.email",
+        port: 587,
+        secure: false,
+        auth: {
+          user: testAccount.user,
+          pass: testAccount.pass,
+        },
+      });
+    }
+
+    // Send the email
+    const info = await transporter.sendMail({
+      from: '"Hously EMS Support" <noreply@hously-ems.com>',
+      to: email,
+      subject: "Password Reset Request - Hously EMS",
+      text: `Hi ${user.first_name},\n\nYou requested a password reset. Click the link below to set a new password:\n\n${resetLink}\n\nIf you did not request this, please ignore this email.`,
+      html: `
+        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #e2e8f0; border-radius: 10px;">
+            <h2 style="color: #3b82f6;">Hously EMS</h2>
+            <p>Hi ${user.first_name},</p>
+            <p>You recently requested to reset your password for your Hously EMS account. Click the button below to reset it:</p>
+            <div style="text-align: center; margin: 30px 0;">
+                <a href="${resetLink}" style="background-color: #3b82f6; color: white; padding: 12px 24px; text-decoration: none; border-radius: 5px; font-weight: bold; display: inline-block;">Reset Password</a>
+            </div>
+            <p style="color: #64748b; font-size: 14px;">If you didn't request a password reset, you can safely ignore this email.</p>
+        </div>
+      `
+    });
+
+    const previewUrl = nodemailer.getTestMessageUrl(info);
+    if (previewUrl) {
+      console.log("Email Preview URL: %s", previewUrl);
+    }
+
+    res.json({
+      success: true,
+      message: 'A password reset link has been sent to your email inbox.',
+      previewUrl: previewUrl || null
+    });
+
+  } catch (error) {
+    next(error);
+  }
+};
+
+const resetPassword = async (req, res, next) => {
+  try {
+    const { email, token, newPassword } = req.body;
+
+    if (!email || !token || !newPassword) {
+      return res.status(400).json({ success: false, message: 'Missing required fields' });
+    }
+
+    if (newPassword.length < 6) {
+      return res.status(400).json({ success: false, message: 'Password must be at least 6 characters' });
+    }
+
+    const [users] = await pool.query(
+      'SELECT id, reset_token, reset_token_expires FROM users WHERE email = ?',
+      [email]
+    );
+
+    if (users.length === 0) {
+      return res.status(400).json({ success: false, message: 'Invalid or expired reset token' });
+    }
+
+    const user = users[0];
+
+    // Check expiry
+    if (!user.reset_token_expires || new Date(user.reset_token_expires) < new Date()) {
+      return res.status(400).json({ success: false, message: 'Reset token has expired' });
+    }
+
+    // Check token validity
+    const isValidToken = await bcrypt.compare(token, user.reset_token || '');
+    if (!isValidToken) {
+      return res.status(400).json({ success: false, message: 'Invalid reset token' });
+    }
+
+    // Hash new password
+    const salt = await bcrypt.genSalt(10);
+    const newHash = await bcrypt.hash(newPassword, salt);
+
+    // Update password and clear reset tokens
+    await pool.query(
+      'UPDATE users SET password_hash = ?, reset_token = NULL, reset_token_expires = NULL WHERE id = ?',
+      [newHash, user.id]
+    );
+
+    res.json({ success: true, message: 'Password has been successfully reset. You can now log in.' });
+  } catch (error) {
+    next(error);
+  }
+};
+
+module.exports = { signup, login, logout, getMe, changePassword, forgotPassword, resetPassword };

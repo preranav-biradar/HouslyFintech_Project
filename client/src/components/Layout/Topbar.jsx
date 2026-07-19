@@ -1,5 +1,5 @@
 import React from 'react';
-import { useLocation } from 'react-router-dom';
+import { useLocation, Link } from 'react-router-dom';
 import { Bell, Search, Menu } from 'lucide-react';
 import { useAuth } from '../../hooks/useAuth';
 
@@ -28,7 +28,13 @@ const Topbar = ({ toggleSidebar }) => {
      
         
         <div className="profile-dropdown">
-          <div className="avatar small">{user?.first_name?.charAt(0)}</div>
+          <Link to="/app/profile" className="avatar-link" title="Profile">
+            {user?.avatar_url ? (
+              <div className="avatar small"><img src={user.avatar_url} alt="User" style={{width: '100%', height: '100%', borderRadius: '50%', objectFit: 'cover'}} /></div>
+            ) : (
+              <div className="avatar small">{user?.first_name?.charAt(0) || 'U'}</div>
+            )}
+          </Link>
         </div>
       </div>
     </header>
