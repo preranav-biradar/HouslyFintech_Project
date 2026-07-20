@@ -2,7 +2,7 @@
 -- Employee Management System — Seed Data
 -- =====================================================
 
-USE employee_management;
+-- USE employee_management;
 
 -- ---------------------
 -- Seed Roles
