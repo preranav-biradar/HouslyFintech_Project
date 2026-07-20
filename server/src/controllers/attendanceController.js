@@ -59,7 +59,16 @@ const checkIn = async (req, res, next) => {
       // Save base64 image to file
       const base64Data = req.body.selfie_base64.replace(/^data:image\/\w+;base64,/, '');
       const filename = `selfie-${userId}-${Date.now()}.jpg`;
-      const filepath = path.join(__dirname, '..', '..', 'uploads', 'selfies', filename);
+
+      const selfieDir = path.join(__dirname, '..', '..', 'uploads', 'selfies');
+
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(selfieDir)) {
+        fs.mkdirSync(selfieDir, { recursive: true });
+      }
+
+      const filepath = path.join(selfieDir, filename);
+
       fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
       selfieUrl = `/uploads/selfies/${filename}`;
     }
@@ -162,7 +171,16 @@ const checkOut = async (req, res, next) => {
     } else if (req.body.selfie_base64) {
       const base64Data = req.body.selfie_base64.replace(/^data:image\/\w+;base64,/, '');
       const filename = `selfie-${userId}-checkout-${Date.now()}.jpg`;
-      const filepath = path.join(__dirname, '..', '..', 'uploads', 'selfies', filename);
+
+      const selfieDir = path.join(__dirname, '..', '..', 'uploads', 'selfies');
+
+      // Create directory if it doesn't exist
+      if (!fs.existsSync(selfieDir)) {
+        fs.mkdirSync(selfieDir, { recursive: true });
+      }
+
+      const filepath = path.join(selfieDir, filename);
+
       fs.writeFileSync(filepath, Buffer.from(base64Data, 'base64'));
       selfieUrl = `/uploads/selfies/${filename}`;
     }
