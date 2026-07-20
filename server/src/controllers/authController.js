@@ -140,9 +140,9 @@ const login = async (req, res, next) => {
     // Set HttpOnly cookie
     res.cookie('token', token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === 'production',
-      sameSite: 'lax',
-      maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
+      secure: true,
+      sameSite: 'none',
+      maxAge: 7 * 24 * 60 * 60 * 1000,
     });
 
     // Return user data (without password_hash)
@@ -168,8 +168,8 @@ const login = async (req, res, next) => {
 const logout = (req, res) => {
   res.clearCookie('token', {
     httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
+    secure: true,
+    sameSite: 'none',
   });
 
   res.json({
@@ -276,7 +276,7 @@ const forgotPassword = async (req, res, next) => {
     }
 
     const [users] = await pool.query('SELECT id, first_name FROM users WHERE email = ?', [email]);
-    
+
     if (users.length === 0) {
       // Return success even if not found to prevent email enumeration
       return res.json({ success: true, message: 'If that email exists, a reset link has been sent.' });
@@ -285,7 +285,7 @@ const forgotPassword = async (req, res, next) => {
     const user = users[0];
     const resetToken = crypto.randomBytes(32).toString('hex');
     const resetTokenHash = await bcrypt.hash(resetToken, 10);
-    
+
     await pool.query(
       'UPDATE users SET reset_token = ?, reset_token_expires = DATE_ADD(NOW(), INTERVAL 1 HOUR) WHERE id = ?',
       [resetTokenHash, user.id]
@@ -293,7 +293,7 @@ const forgotPassword = async (req, res, next) => {
 
     // Generate Reset Link
     const resetLink = `${req.protocol}://${req.get('host') === 'localhost:5000' ? 'localhost:5173' : req.get('host')}/reset-password/${resetToken}?email=${encodeURIComponent(email)}`;
-    
+
     // Set up Nodemailer Transport
     let transporter;
     if (process.env.SMTP_HOST && process.env.SMTP_USER) {
