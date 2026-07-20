@@ -1,9 +1,4 @@
--- =====================================================
--- Employee Management System — Database Schema
--- =====================================================
 
-CREATE DATABASE IF NOT EXISTS employee_management;
-USE employee_management;
 
 -- ---------------------
 -- Roles Table
