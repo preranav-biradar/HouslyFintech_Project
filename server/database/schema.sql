@@ -35,6 +35,10 @@ CREATE TABLE IF NOT EXISTS users (
     password_hash VARCHAR(255) NOT NULL,
     phone VARCHAR(20),
     avatar_url VARCHAR(500),
+
+    reset_token VARCHAR(255),
+    reset_token_expires DATETIME,
+
     role_id INT NOT NULL,
     department_id INT NOT NULL,
     manager_id INT,
@@ -43,8 +47,9 @@ CREATE TABLE IF NOT EXISTS users (
     is_active BOOLEAN DEFAULT TRUE,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-    FOREIGN KEY (role_id) REFERENCES roles(id) ON DELETE RESTRICT,
-    FOREIGN KEY (department_id) REFERENCES departments(id) ON DELETE RESTRICT,
+
+    FOREIGN KEY (role_id) REFERENCES roles(id),
+    FOREIGN KEY (department_id) REFERENCES departments(id),
     FOREIGN KEY (manager_id) REFERENCES users(id) ON DELETE SET NULL
 ) ENGINE=InnoDB;
 

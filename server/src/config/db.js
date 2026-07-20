@@ -28,6 +28,7 @@ async function initializeDatabase() {
       port: config.db.port,
       user: config.db.user,
       password: config.db.password,
+      database: config.db.database,   // <-- ADD THIS
       multipleStatements: true,
     });
 
