@@ -147,78 +147,30 @@ Features:
 
 
 
-```
-screenshots/login.png
-```
 
 <img src="login.png" width="100%">
 
----
-
-
-```
-screenshots/admin-dashboard.png
-```
-
 <img src="signup.png" width="100%">
 
----
-
-## Employee Dashboard
-
-```
-screenshots/user-dashboard.png
-```
 
 <img src="forgot.png" width="100%">
 
----
-
-
-```
-screenshots/attendance.png
-```
 
 <img src="admin.png" width="100%">
 
----
 
-
-
-```
-screenshots/leave-management.png
-```
 
 <img src="admin2.png" width="100%">
 
----
-
-
-
-```
-screenshots/expense-management.png
-```
 
 <img src="screenshots/expense-management.png" width="100%">
 
----
-
-
-```
-screenshots/department-management.png
-```
 
 <img src="panel.png" width="100%">
 
----
-
-```
-screenshots/role-management.png
-```
 
 <img src="expense" width="100%">
 
----
 
 # 📁 Project Structure
 
@@ -250,7 +202,7 @@ Employee-Management-System
 ## Clone Repository
 
 ```bash
-git clone https://github.com/yourusername/Employee-Management-System.git
+git clone https://github.com/preranav-biradar/HouslyFintech_Project
 ```
 
 ---
