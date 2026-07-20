@@ -1,7 +1,7 @@
 import axios from 'axios';
 
 const api = axios.create({
-  baseURL: 'http://localhost:5000/api',
+  baseURL: 'https://houslyfintechproject-production.up.railway.app/api',
   withCredentials: true, // Crucial for sending/receiving HttpOnly cookies
   headers: {
     'Content-Type': 'application/json',

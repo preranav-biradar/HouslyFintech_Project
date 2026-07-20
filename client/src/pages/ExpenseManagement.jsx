@@ -139,14 +139,14 @@ const ExpenseManagement = () => {
       <div className="expense-dashboard">
         <div className="header-actions">
           <div className="tabs">
-            <button 
+            <button
               className={`tab ${activeTab === 'my-expenses' ? 'active' : ''}`}
               onClick={() => setActiveTab('my-expenses')}
             >
               My Expenses
             </button>
             {hasRole('admin') && (
-              <button 
+              <button
                 className={`tab ${activeTab === 'approvals' ? 'active' : ''}`}
                 onClick={() => setActiveTab('approvals')}
               >
@@ -181,10 +181,10 @@ const ExpenseManagement = () => {
                   <span className="count">{summary.approved_count} claims</span>
                 </div>
               </div>
-             
+
             </div>
 
-          <div className="history-section glass-panel ">
+            <div className="history-section glass-panel ">
               <h3>Expense History</h3>
               <table className="data-table mt-3">
                 <thead>
@@ -212,7 +212,7 @@ const ExpenseManagement = () => {
                       </td>
                       <td>
                         {claim.receipt_url ? (
-                          <button className="btn-icon info" onClick={() => setPreviewReceipt(`http://localhost:5000${claim.receipt_url}`)}>
+                          <button className="btn-icon info" onClick={() => setPreviewReceipt(`https://houslyfintechproject-production.up.railway.app${claim.receipt_url}`)}>
                             <Eye size={16} /> View
                           </button>
                         ) : '-'}
@@ -253,7 +253,7 @@ const ExpenseManagement = () => {
                       ₹{claim.amount}
                     </div>
                   </div>
-                  
+
                   <div className="claim-body">
                     <div className="claim-details">
                       <div className="detail-row"><span className="label">Category:</span> {claim.category_name}</div>
@@ -263,13 +263,13 @@ const ExpenseManagement = () => {
                     </div>
                     {claim.receipt_url && (
                       <div className="claim-receipt">
-                        <button className="btn-secondary sm" onClick={() => setPreviewReceipt(`http://localhost:5000${claim.receipt_url}`)}>
+                        <button className="btn-secondary sm" onClick={() => setPreviewReceipt(`https://houslyfintechproject-production.up.railway.app${claim.receipt_url}`)}>
                           <Eye size={14} /> View Receipt
                         </button>
                       </div>
                     )}
                   </div>
-                  
+
                   <div className="claim-actions">
                     <button className="btn-success" onClick={() => handleApprove(claim.id)}>
                       <CheckCircle2 size={16} /> Approve
@@ -300,35 +300,35 @@ const ExpenseManagement = () => {
               </div>
               <form onSubmit={handleSubmitExpense} className="modal-body">
                 {formError && <div className="error-alert mb-3"><AlertCircle size={16} /> {formError}</div>}
-                
+
                 <div className="form-row">
                   <div className="input-group">
                     <label>Category</label>
-                    <select required value={formData.category_id} onChange={e => setFormData({...formData, category_id: e.target.value})}>
+                    <select required value={formData.category_id} onChange={e => setFormData({ ...formData, category_id: e.target.value })}>
                       <option value="">Select Category</option>
                       {categories.map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
                     </select>
                   </div>
                   <div className="input-group">
                     <label>Date</label>
-                    <input type="date" required max={new Date().toISOString().split('T')[0]} value={formData.expense_date} onChange={e => setFormData({...formData, expense_date: e.target.value})} />
+                    <input type="date" required max={new Date().toISOString().split('T')[0]} value={formData.expense_date} onChange={e => setFormData({ ...formData, expense_date: e.target.value })} />
                   </div>
                 </div>
 
                 <div className="form-row">
                   <div className="input-group">
                     <label>Title</label>
-                    <input type="text" required placeholder="E.g. Client lunch" value={formData.title} onChange={e => setFormData({...formData, title: e.target.value})} />
+                    <input type="text" required placeholder="E.g. Client lunch" value={formData.title} onChange={e => setFormData({ ...formData, title: e.target.value })} />
                   </div>
                   <div className="input-group">
                     <label>Amount (₹)</label>
-                    <input type="number" required min="1" step="0.01" placeholder="0.00" value={formData.amount} onChange={e => setFormData({...formData, amount: e.target.value})} />
+                    <input type="number" required min="1" step="0.01" placeholder="0.00" value={formData.amount} onChange={e => setFormData({ ...formData, amount: e.target.value })} />
                   </div>
                 </div>
-                
+
                 <div className="input-group">
                   <label>Description (Optional)</label>
-                  <textarea rows="2" value={formData.description} onChange={e => setFormData({...formData, description: e.target.value})}></textarea>
+                  <textarea rows="2" value={formData.description} onChange={e => setFormData({ ...formData, description: e.target.value })}></textarea>
                 </div>
 
                 <div className="input-group">
@@ -340,7 +340,7 @@ const ExpenseManagement = () => {
                     </label>
                   </div>
                 </div>
-                
+
                 <div className="modal-footer">
                   <button type="button" className="btn-secondary" onClick={() => setShowModal(false)}>Cancel</button>
                   <button type="submit" className="btn-primary">Submit Claim</button>
